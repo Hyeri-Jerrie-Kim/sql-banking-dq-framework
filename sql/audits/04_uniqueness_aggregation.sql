@@ -20,21 +20,21 @@
  *   2. dq_collision_summary        : Aggregate cluster-level metrics for engineering SLA
  *******************************************************************************/
  
- -- Step 1: Group by composite natural keys and isolate collision clusters
- WITH composite_collision_clusters AS(
-	 SELECT
-		customer_id,
-		application_date,
-		COUNT(*) AS collision_depth,
-		MIN(application_id) AS first_application_id,
-		MAX(application_id) AS latest_application_id,
-		MAX(application_id) - MIN(application_id) AS id_sequence_gap
-	 FROM credit_applications
-	 GROUP BY customer_id, application_date
-	 HAVING COUNT(*) > 1
- )
+-- Step 1: Group by composite natural keys and isolate collision clusters
+WITH composite_collision_clusters AS (
+    SELECT
+        customer_id,
+        application_date,
+        COUNT(*) AS collision_depth,
+        MIN(application_id) AS first_application_id,
+        MAX(application_id) AS latest_application_id,
+        MAX(application_id) - MIN(application_id) AS id_sequence_gap
+    FROM credit_applications
+    GROUP BY customer_id, application_date
+    HAVING COUNT(*) > 1
+)
  
- -- =============================================================================
+-- =============================================================================
 -- FINAL STEP: BATCH-LEVEL CONCURRENCY SLA AUDIT SUMMARY
 -- =============================================================================
 SELECT
