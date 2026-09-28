@@ -64,4 +64,16 @@ VALUES
 (1012, 20001, '2026-09-06', 98000.00, 'Full-time',     765, 'M5V 2T6'),
 
 -- Customer 20005: Multi-channel concurrent submission (Branch entry after digital submission)
-(1013, 20005, '2026-09-04', 55000.00, 'Contract',      610, 'M3C 1W5');
+(1013, 20005, '2026-09-04', 55000.00, 'Contract',      610, 'M3C 1W5'),
+
+-- -----------------------------------------------------------------------------
+-- [FIXTURE D] Validity & Domain Boundary Defects (Regulatory Value Audit)
+-- -----------------------------------------------------------------------------
+-- Customer 20011: Negative income anomaly from upstream calculation error
+(1014, 20011, '2026-09-06', -15000.00, 'Full-time',          720, 'M5V 2T6'),
+
+-- Customer 20012: Credit score out of bounds (> 900 exceeds Equifax Canada scale)
+(1015, 20012, '2026-09-06', 85000.00,  'Full-time',          950, 'M4B 1B3'),
+
+-- Customer 20013: Unapproved employment enum & US Zip Code format breach
+(1016, 20013, '2026-09-07', 52000.00,  'Gig-Worker-Invalid', 650, '90210');
