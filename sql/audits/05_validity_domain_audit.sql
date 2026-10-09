@@ -30,17 +30,21 @@ WITH evaluated_records AS (
     SELECT
         application_id,
         customer_id,
+        annual_income,
+        employment_status,
+        credit_score,
+        postal_code,
 
         -- Rule 1: Negative income breach flag (Exclude NULLs)
         CASE
-            WHEN annual_income IS NOT NULL AND annual_income < 0 
+            WHEN annual_income IS NOT NULL AND annual_income < 0
             THEN 1
             ELSE 0
         END AS is_invalid_income,
         
         -- Rule 2: Credit score out-of-bounds flag (Standard: 300 to 900 Canadian FICO/Beacon scale)
         CASE
-            WHEN credit_score IS NOT NULL AND credit_score NOT BETWEEN 300 AND 900 
+            WHEN credit_score IS NOT NULL AND credit_score NOT BETWEEN 300 AND 900
             THEN 1
             ELSE 0
         END AS is_invalid_credit_score,
@@ -48,10 +52,10 @@ WITH evaluated_records AS (
         -- Rule 3: Unapproved employment status enum flag (Trim whitespace prior to set evaluation)
         CASE
             WHEN employment_status IS NOT NULL
-                AND TRIM(employment_status) != ''
-                AND TRIM(employment_status) NOT IN (
-                    'Full-time', 'Part-time', 'Self-employed', 'Contract', 'Retired', 'Unemployed'
-                )
+				 AND TRIM(employment_status) != ''
+                 AND TRIM(employment_status) NOT IN (
+                     'Full-time', 'Part-time', 'Self-employed', 'Contract', 'Retired', 'Unemployed'
+                 )
             THEN 1
             ELSE 0
         END AS is_invalid_employment_status,
@@ -59,13 +63,23 @@ WITH evaluated_records AS (
         -- Rule 4: Canadian postal code format breach flag (Strict Canada Post regex compliance)
         CASE
             WHEN postal_code IS NOT NULL
-                AND TRIM(postal_code) != ''
-                AND postal_code NOT REGEXP '^[A-CEGHJ-NPR-TVXY][0-9][A-CEGHJ-NPR-TV-Z] ?[0-9][A-CEGHJ-NPR-TV-Z][0-9]$'
+                 AND TRIM(postal_code) != ''
+                 AND postal_code NOT REGEXP '^[A-CEGHJ-NPR-TVXY][0-9][A-CEGHJ-NPR-TV-Z] ?[0-9][A-CEGHJ-NPR-TV-Z][0-9]$'
             THEN 1
             ELSE 0
         END AS is_invalid_postal_code
 
     FROM credit_applications
+),
+
+-- =============================================================================
+-- STEP 2: PRE-AGGREGATE SEVERITY METRIC (DRY COMPLIANCE: AVOID FORMULA DUPLICATION)
+-- =============================================================================
+record_severity_scored AS (
+    SELECT
+        *,
+        (is_invalid_income + is_invalid_credit_score + is_invalid_employment_status + is_invalid_postal_code) AS defect_count_per_record
+    FROM evaluated_records
 )
 
 -- =============================================================================
@@ -87,25 +101,19 @@ SELECT
     COALESCE(SUM(is_invalid_postal_code), 0) AS invalid_postal_code_cnt,
     ROUND(AVG(is_invalid_postal_code * 100.0), 2) AS invalid_postal_code_pct,
     
-    -- 2. Multi-defect Severity & Distribution
-    COUNT(CASE WHEN (is_invalid_income + is_invalid_credit_score + is_invalid_employment_status + is_invalid_postal_code) > 0 THEN 1 END) AS total_defective_records_cnt,
-    COUNT(CASE WHEN (is_invalid_income + is_invalid_credit_score + is_invalid_employment_status + is_invalid_postal_code) > 1 THEN 1 END) AS multi_defect_records_cnt,
-    COALESCE(MAX(is_invalid_income + is_invalid_credit_score + is_invalid_employment_status + is_invalid_postal_code), 0) AS max_defects_per_record,
+    -- 2. Multi-defect Severity & Distribution (Leveraging defect_count_per_record alias)
+    COUNT(CASE WHEN defect_count_per_record > 0 THEN 1 END) AS total_defective_records_cnt,
+    COUNT(CASE WHEN defect_count_per_record > 1 THEN 1 END) AS multi_defect_records_cnt,
+    COALESCE(MAX(defect_count_per_record), 0) AS max_defects_per_record,
 
     -- 3. Batch-level Validity Defect Rate (%)
-    ROUND(
-        AVG(CASE WHEN (is_invalid_income + is_invalid_credit_score + is_invalid_employment_status + is_invalid_postal_code) > 0 THEN 100.0 ELSE 0.0 END), 
-        2
-    ) AS batch_defect_rate_pct,
+    ROUND(AVG(CASE WHEN defect_count_per_record > 0 THEN 100.0 ELSE 0.0 END), 2) AS batch_defect_rate_pct,
 
     -- 4. Batch-level SLA Alert Evaluation
     CASE
-        WHEN (COALESCE(SUM(is_invalid_income), 0)
-            + COALESCE(SUM(is_invalid_credit_score), 0)
-            + COALESCE(SUM(is_invalid_employment_status), 0)
-            + COALESCE(SUM(is_invalid_postal_code), 0)) > 0
+        WHEN COUNT(CASE WHEN defect_count_per_record > 0 THEN 1 END) > 0 
         THEN 'VALIDITY_BREACH_ALERT'
         ELSE 'SLA_CONFORMANT'
     END AS batch_validity_alert_status
 
-FROM evaluated_records;
+FROM record_severity_scored;
